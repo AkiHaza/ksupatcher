@@ -34,9 +34,16 @@ class KsuEngine(
         val fileName = when (variant) {
             KsuVariant.KSU -> "libksud.so"
             KsuVariant.KSUN -> "libksud_next.so"
+            KsuVariant.RESUKISU -> "ksud-resukisu"
+            KsuVariant.BACKSLASHXX -> "ksud-backslashxx"
         }
         try {
-            return resolveBundledBinary(fileName)
+            return if (variant == KsuVariant.RESUKISU || variant == KsuVariant.BACKSLASHXX) {
+                File(app.codeCacheDir, fileName).takeIf { it.exists() }
+                    ?: error("Cached ${variant.displayName()} ksud is missing")
+            } else {
+                resolveBundledBinary(fileName)
+            }
         } catch (e: Throwable) {
             if (variant == KsuVariant.KSUN) {
                 try {
@@ -59,8 +66,28 @@ class KsuEngine(
         return file
     }
 
-    fun prepareKsud(variant: KsuVariant): File {
+    suspend fun prepareKsud(variant: KsuVariant): File {
         File(File(app.filesDir, "work"), "ksud").delete()
+        if (variant == KsuVariant.RESUKISU || variant == KsuVariant.BACKSLASHXX) {
+            val cacheName = if (variant == KsuVariant.RESUKISU) "ksud-resukisu" else "ksud-backslashxx"
+            val cached = File(app.codeCacheDir, cacheName)
+            if (!cached.exists()) {
+                val (owner, repo) = if (variant == KsuVariant.RESUKISU) {
+                    UpdateConfig.resukiSuOwner to UpdateConfig.resukiSuRepo
+                } else {
+                    UpdateConfig.backslashxxOwner to UpdateConfig.backslashxxRepo
+                }
+                val asset = releaseRepository.fetchLatestAsset(
+                    owner,
+                    repo,
+                    listOf("ksud-aarch64-linux-android"),
+                ).getOrThrow()
+                downloadRepository.download(asset.downloadUrl, cached) { }.getOrThrow()
+            }
+            cached.setExecutable(true, false)
+            if (!cached.canExecute()) error("Downloaded ${variant.displayName()} ksud is not executable")
+            return cached
+        }
         val ksud = resolveBinary(variant)
         ksud.setExecutable(true, false)
         if (!ksud.canExecute()) {
@@ -69,19 +96,41 @@ class KsuEngine(
         return ksud
     }
 
-    suspend fun resolveModule(variant: KsuVariant, existing: String?): Result<Pair<String?, String>> =
+    suspend fun resolveModule(variant: KsuVariant, kmi: String, existing: String?): Result<Pair<String?, String>> =
         withContext(Dispatchers.IO) {
             runCatching {
-                if (!existing.isNullOrBlank()) return@runCatching null to existing
-                val tag = releaseRepository.fetchLatestTag(UpdateConfig.ksuLkmOwner, UpdateConfig.ksuLkmRepo).getOrThrow()
-                val asset = when (variant) {
-                    KsuVariant.KSU -> UpdateConfig.ksuModuleAsset
-                    KsuVariant.KSUN -> UpdateConfig.ksunModuleAsset
+                if (!existing.isNullOrBlank()) {
+                    val module = File(existing).canonicalFile
+                    require(module.isFile && module.extension.equals("ko", ignoreCase = true)) {
+                        "Selected kernel module is not a .ko file"
+                    }
+                    return@runCatching module.name to module.absolutePath
                 }
-                val moduleFile = File(workDir(), asset)
-                val url = "https://github.com/${UpdateConfig.ksuLkmOwner}/${UpdateConfig.ksuLkmRepo}/releases/download/${tag}/${asset}"
-                downloadRepository.download(url, moduleFile) { }.getOrThrow()
-                asset to moduleFile.absolutePath
+                if (variant == KsuVariant.RESUKISU) {
+                    error("ReSukiSU does not publish standalone LKM assets. Select a kernelsu.ko built for this kernel.")
+                }
+                val (owner, repo, candidates) = when (variant) {
+                    KsuVariant.KSU -> Triple(
+                        UpdateConfig.ksuLkmOwner,
+                        UpdateConfig.ksuLkmRepo,
+                        listOf("lkm-aarch64-${kmi}_kernelsu.ko", "${kmi}_kernelsu.ko")
+                    )
+                    KsuVariant.KSUN -> Triple(
+                        UpdateConfig.ksunLkmOwner,
+                        UpdateConfig.ksunLkmRepo,
+                        listOf("${kmi}_kernelsu.ko", "lkm-aarch64-${kmi}_kernelsu.ko")
+                    )
+                    KsuVariant.BACKSLASHXX -> Triple(
+                        UpdateConfig.backslashxxOwner,
+                        UpdateConfig.backslashxxRepo,
+                        listOf("lkm-aarch64-${kmi}_kernelsu.ko", "${kmi}_kernelsu.ko")
+                    )
+                    KsuVariant.RESUKISU -> error("unreachable")
+                }
+                val asset = releaseRepository.fetchLatestAsset(owner, repo, candidates).getOrThrow()
+                val moduleFile = File(workDir(), asset.name)
+                downloadRepository.download(asset.downloadUrl, moduleFile) { }.getOrThrow()
+                asset.name to moduleFile.absolutePath
             }
         }
 
@@ -158,7 +207,7 @@ class KsuEngine(
         onLine: (String) -> Unit,
         onPhase: (OtaPhase) -> Unit,
         onSlots: (String, String) -> Unit,
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = try {
         onPhase(OtaPhase.CHECKING_ROOT)
         if (!RootShell.isRooted()) {
             val granted = try {
@@ -171,8 +220,7 @@ class KsuEngine(
             }
         }
         onLine("Root access granted.")
-        val variantName = if (variant == KsuVariant.KSUN) "KernelSU-Next" else "KernelSU"
-        onLine("Target variant: $variantName")
+        onLine("Target variant: ${variant.displayName()}")
 
         if (!lkmMode) {
             onPhase(OtaPhase.CHECKING_OTA_PROP)
@@ -204,7 +252,7 @@ class KsuEngine(
             onLine("Binary preparation failed: ${e.message}")
             throw e
         }
-        val module = resolveModule(variant, moduleOverride).getOrElse {
+        val module = resolveModule(variant, kmi, moduleOverride).getOrElse {
             onLine("No kernel module found. Please select one manually or ensure your internet connection is active to auto-download.")
             throw it
         }.second
@@ -237,7 +285,9 @@ class KsuEngine(
             else "Patching and flashing inactive slot ($targetSlot)..."
         )
         runCommand(rootCommand, workDir(), displayCommand) { onLine(it) }.getOrThrow()
-        Unit
+        Result.success(Unit)
+    } catch (error: Throwable) {
+        Result.failure(error)
     }
 
     suspend fun runFilePatch(
@@ -249,7 +299,7 @@ class KsuEngine(
         allowShell: Boolean,
         enableAdbd: Boolean,
         onLine: (String) -> Unit,
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = try {
         val source = path?.takeUnless { it.isBlank() } ?: error("Pass a boot image or rom zip path")
         val wd = workDir()
 
@@ -281,7 +331,7 @@ class KsuEngine(
         }
 
         val ksud = prepareKsud(variant)
-        val module = resolveModule(variant, moduleOverride).getOrElse {
+        val module = resolveModule(variant, kmi, moduleOverride).getOrElse {
             onLine("No kernel module found. Please select one manually or ensure your internet connection is active to auto-download.")
             throw it
         }.second
@@ -311,7 +361,9 @@ class KsuEngine(
             exportPatchedImage(patched).getOrThrow()
         }
         onLine("Patched image written to $dest")
-        Unit
+        Result.success(Unit)
+    } catch (error: Throwable) {
+        Result.failure(error)
     }
 
     fun exportPatchedImage(sourceFile: File): Result<String> = runCatching {

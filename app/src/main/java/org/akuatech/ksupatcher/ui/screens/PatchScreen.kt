@@ -52,6 +52,7 @@ import org.akuatech.ksupatcher.util.defaultLogFileName
 import org.akuatech.ksupatcher.util.writeLogToUri
 import org.akuatech.ksupatcher.viewmodel.InstallMethod
 import org.akuatech.ksupatcher.viewmodel.KsuVariant
+import org.akuatech.ksupatcher.data.UpdateConfig
 import org.akuatech.ksupatcher.viewmodel.OtaPhase
 import org.akuatech.ksupatcher.viewmodel.RootStatus
 import org.akuatech.ksupatcher.viewmodel.UiState
@@ -60,6 +61,7 @@ import org.akuatech.ksupatcher.viewmodel.UiState
 fun PatchScreen(
     state: UiState,
     onVariantSelected: (KsuVariant) -> Unit,
+    onKmiSelected: (String) -> Unit,
     onMethodSelected: (InstallMethod) -> Unit,
     onPickBoot: (Uri) -> Unit,
     onPickModule: (Uri) -> Unit,
@@ -128,28 +130,69 @@ fun PatchScreen(
         AppStepHeader(number = "01", title = "Variant")
         Spacer(modifier = Modifier.height(12.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            AppActionTile(
-                title = "KernelSU",
-                drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksu_logo,
-                selected = patch.variant == KsuVariant.KSU,
-                onClick = { onVariantSelected(KsuVariant.KSU) },
-                modifier = Modifier.weight(1f)
-            )
-            AppActionTile(
-                title = "KernelSU-Next",
-                drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksun_logo,
-                selected = patch.variant == KsuVariant.KSUN,
-                onClick = { onVariantSelected(KsuVariant.KSUN) },
-                modifier = Modifier.weight(1f)
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AppActionTile(
+                    title = "KernelSU",
+                    drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksu_logo,
+                    selected = patch.variant == KsuVariant.KSU,
+                    onClick = { onVariantSelected(KsuVariant.KSU) },
+                    modifier = Modifier.weight(1f)
+                )
+                AppActionTile(
+                    title = "KernelSU-Next",
+                    drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksun_logo,
+                    selected = patch.variant == KsuVariant.KSUN,
+                    onClick = { onVariantSelected(KsuVariant.KSUN) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AppActionTile(
+                    title = "ReSukiSU",
+                    subtitle = "Custom LKM",
+                    icon = HugeIcons.Package,
+                    selected = patch.variant == KsuVariant.RESUKISU,
+                    onClick = { onVariantSelected(KsuVariant.RESUKISU) },
+                    modifier = Modifier.weight(1f)
+                )
+                AppActionTile(
+                    title = "backslashxx",
+                    subtitle = "KernelSU fork",
+                    icon = HugeIcons.Package,
+                    selected = patch.variant == KsuVariant.BACKSLASHXX,
+                    onClick = { onVariantSelected(KsuVariant.BACKSLASHXX) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
         Spacer(modifier = Modifier.height(8.dp))
         StepConnector()
         Spacer(modifier = Modifier.height(8.dp))
+        AppStepHeader(number = "01b", title = "Kernel interface")
+        Spacer(modifier = Modifier.height(8.dp))
+        var kmiMenuExpanded by remember { mutableStateOf(false) }
+        Box {
+            OutlinedButton(onClick = { kmiMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(patch.kmi)
+            }
+            DropdownMenu(expanded = kmiMenuExpanded, onDismissRequest = { kmiMenuExpanded = false }) {
+                UpdateConfig.supportedKmis.forEach { kmi ->
+                    DropdownMenuItem(
+                        text = { Text(kmi) },
+                        onClick = { kmiMenuExpanded = false; onKmiSelected(kmi) }
+                    )
+                }
+            }
+        }
+        if (patch.variant == KsuVariant.RESUKISU) {
+            Text(
+                "ReSukiSU does not publish a standalone LKM in its releases. Select a module built against this exact kernel.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
         // Step 2: Method
         AppStepHeader(number = "02", title = "Method")
         Spacer(modifier = Modifier.height(12.dp))
@@ -242,6 +285,15 @@ fun PatchScreen(
             onToggleAllowShell = onToggleAllowShell,
             onToggleEnableAdbd = onToggleEnableAdbd
         )
+
+        if (patch.method == InstallMethod.LKM || patch.variant == KsuVariant.RESUKISU || patch.variant == KsuVariant.BACKSLASHXX) {
+            Text(
+                "KernelSU patching and LKM loading both require a matching kernel ABI. Generic release files target GKI KMI; YAAP or other non-GKI kernels need a .ko built from that kernel's symbols.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 

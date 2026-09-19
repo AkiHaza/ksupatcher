@@ -22,6 +22,7 @@ import me.rerere.hugeicons.stroke.Alert01
 import me.rerere.hugeicons.stroke.AlertCircle
 import me.rerere.hugeicons.stroke.CheckmarkCircle01
 import me.rerere.hugeicons.stroke.InformationCircle
+import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.RefreshCw
 import me.rerere.hugeicons.stroke.Save
 import androidx.compose.material3.*
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.akuatech.ksupatcher.ui.components.*
+import org.akuatech.ksupatcher.data.UpdateConfig
 import org.akuatech.ksupatcher.util.defaultLogFileName
 import org.akuatech.ksupatcher.util.writeLogToUri
 import org.akuatech.ksupatcher.viewmodel.KsuVariant
@@ -54,10 +56,12 @@ fun OtaScreen(
     rootStatus: RootStatus,
     isCheckingRoot: Boolean,
     variant: KsuVariant,
+    kmi: String,
     moduleName: String?,
     allowShell: Boolean,
     enableAdbd: Boolean,
     onVariantSelected: (KsuVariant) -> Unit,
+    onKmiSelected: (String) -> Unit,
     onPickModule: (Uri) -> Unit,
     onRunOta: () -> Unit,
     onResetOta: () -> Unit,
@@ -154,24 +158,57 @@ fun OtaScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             AppStepHeader(number = "01", title = "Variant")
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                AppActionTile(
-                    title = "KernelSU",
-                    drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksu_logo,
-                    selected = variant == KsuVariant.KSU,
-                    onClick = { onVariantSelected(KsuVariant.KSU) },
-                    modifier = Modifier.weight(1f)
-                )
-                AppActionTile(
-                    title = "KernelSU-Next",
-                    drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksun_logo,
-                    selected = variant == KsuVariant.KSUN,
-                    onClick = { onVariantSelected(KsuVariant.KSUN) },
-                    modifier = Modifier.weight(1f)
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AppActionTile(
+                        title = "KernelSU",
+                        drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksu_logo,
+                        selected = variant == KsuVariant.KSU,
+                        onClick = { onVariantSelected(KsuVariant.KSU) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    AppActionTile(
+                        title = "KernelSU-Next",
+                        drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksun_logo,
+                        selected = variant == KsuVariant.KSUN,
+                        onClick = { onVariantSelected(KsuVariant.KSUN) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AppActionTile(
+                        title = "ReSukiSU",
+                        subtitle = "Custom LKM",
+                        icon = HugeIcons.Package,
+                        selected = variant == KsuVariant.RESUKISU,
+                        onClick = { onVariantSelected(KsuVariant.RESUKISU) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    AppActionTile(
+                        title = "backslashxx",
+                        subtitle = "KernelSU fork",
+                        icon = HugeIcons.Package,
+                        selected = variant == KsuVariant.BACKSLASHXX,
+                        onClick = { onVariantSelected(KsuVariant.BACKSLASHXX) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        var kmiMenuExpanded by remember { mutableStateOf(false) }
+        Box {
+            OutlinedButton(onClick = { kmiMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(kmi)
+            }
+            DropdownMenu(expanded = kmiMenuExpanded, onDismissRequest = { kmiMenuExpanded = false }) {
+                UpdateConfig.supportedKmis.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = { kmiMenuExpanded = false; onKmiSelected(option) }
+                    )
+                }
             }
         }
 
@@ -198,6 +235,13 @@ fun OtaScreen(
             enableAdbd = enableAdbd,
             onToggleAllowShell = onToggleAllowShell,
             onToggleEnableAdbd = onToggleEnableAdbd
+        )
+
+        Text(
+            "OTA/LKM operations still require a module matching the running kernel ABI. YAAP or other non-GKI kernels generally need a custom .ko.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 8.dp)
         )
 
         Spacer(modifier = Modifier.height(24.dp))

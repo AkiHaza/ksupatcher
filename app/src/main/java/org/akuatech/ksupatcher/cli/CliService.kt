@@ -45,6 +45,8 @@ class CliService : Service() {
         }
         val variant = when (intent.getStringExtra("variant")?.lowercase()) {
             "ksun", "next", "kernelsu-next" -> KsuVariant.KSUN
+            "resukisu", "resuki" -> KsuVariant.RESUKISU
+            "backslashxx", "backslash", "xx" -> KsuVariant.BACKSLASHXX
             else -> KsuVariant.KSU
         }
         val kmiArg = intent.getStringExtra("kmi")
@@ -64,7 +66,7 @@ class CliService : Service() {
         val settings = SettingsRepository(applicationContext)
 
         scope.launch {
-            val kmi = kmiArg ?: "android12-5.10"
+            val kmi = kmiArg ?: org.akuatech.ksupatcher.data.UpdateConfig.defaultKmi
             Log.i(TAG, "action=$action variant=$variant kmi=$kmi allowShell=$allowShell enableAdbd=$enableAdbd")
             val result = if (action == "patch") {
                 engine.runFilePatch(

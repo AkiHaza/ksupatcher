@@ -29,7 +29,19 @@ import android.os.SystemClock
 import java.security.MessageDigest
 import java.time.Instant
 
-enum class KsuVariant { KSU, KSUN }
+enum class KsuVariant {
+    KSU,
+    KSUN,
+    RESUKISU,
+    BACKSLASHXX,
+}
+
+fun KsuVariant.displayName(): String = when (this) {
+    KsuVariant.KSU -> "KernelSU"
+    KsuVariant.KSUN -> "KernelSU-Next"
+    KsuVariant.RESUKISU -> "ReSukiSU"
+    KsuVariant.BACKSLASHXX -> "KernelSU (backslashxx)"
+}
 enum class InstallMethod { PATCH, LKM }
 enum class RootStatus { GRANTED, NOT_GRANTED, UNKNOWN }
 
@@ -97,7 +109,7 @@ data class PatchState(
     val lastOutput: String? = null,
     val outputPath: String? = null,
     val rebootRequired: Boolean = false,
-    val kmi: String = "android12-5.10",
+    val kmi: String = UpdateConfig.defaultKmi,
     val allowShell: Boolean = false,
     val enableAdbd: Boolean = false
 )
@@ -295,7 +307,20 @@ _state.update { it.copy(showDisclaimer = false, disclaimerDismissed = true) }
     }
 
     fun selectVariant(variant: KsuVariant) {
-        _state.update { it.copy(patchState = it.patchState.copy(variant = variant)) }
+        _state.update {
+            it.copy(
+                patchState = it.patchState.copy(
+                    variant = variant,
+                    moduleName = null,
+                    modulePath = null,
+                )
+            )
+        }
+    }
+
+    fun selectKmi(kmi: String) {
+        if (kmi !in UpdateConfig.supportedKmis) return
+        _state.update { it.copy(patchState = it.patchState.copy(kmi = kmi, moduleName = null, modulePath = null)) }
     }
 
     fun selectMethod(method: InstallMethod) {
@@ -593,7 +618,7 @@ _state.update { it.copy(showDisclaimer = false, disclaimerDismissed = true) }
         val variant = _state.value.patchState.variant
         engine.prepareKsud(variant)
         if (_state.value.patchState.modulePath.isNullOrBlank()) {
-            val (name, path) = engine.resolveModule(variant, null).getOrThrow()
+            val (name, path) = engine.resolveModule(variant, _state.value.patchState.kmi, null).getOrThrow()
             _state.update {
                 it.copy(
                     patchState = it.patchState.copy(

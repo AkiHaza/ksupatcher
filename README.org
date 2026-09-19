@@ -23,13 +23,21 @@ Ksupatcher is a simple, native tool for managing KernelSU and KernelSU-Next dire
 
 - *Android 9.0+* (API 28)
 - Requires an *unlocked bootloader*.
-- Supports GKI-compatible devices (kernel versions 5.10 to 6.1).
+- Supports GKI-compatible devices (kernel versions 5.10 to 6.18) and can use
+  fork-specific LKMs from KernelSU, KernelSU-Next, and backslashxx.
+- ReSukiSU manager/ksud support is available, but ReSukiSU currently does not
+  publish standalone LKM assets. Select a `kernelsu.ko` built for the target
+  kernel when using it.
+- YAAP and other non-GKI kernels cannot use a generic GKI `.ko` safely. An LKM
+  must be built against the exact kernel configuration and exported symbols;
+  this application cannot make an incompatible module compatible.
 
 * Features
 
 - *Local Patching:* Patch boot images for KernelSU/KernelSU-Next on-device.
 - *OTA Survival:* Flash patched images to the inactive slot to keep root after a system update.
 - *LKM Support:* Download and install kernel modules (LKM) specific to your KMI.
+- *Fork-aware modules:* Select KernelSU, KernelSU-Next, ReSukiSU, or backslashxx and choose the matching KMI.
 - *Live Logs:* Real-time terminal output from ~ksud~.
 - *Theming:* Full Material 3 and Monet (dynamic color) support.
 - *Updates:* Check for and install new app versions from GitHub.
@@ -64,6 +72,7 @@ fastboot flash boot boot-patched.img
 * Credits
 
 - The [[https://github.com/tiann/KernelSU][KernelSU]] and [[https://github.com/KernelSU-Next/KernelSU-Next][KernelSU-Next]] teams.
+- [[https://github.com/ReSukiSU/ReSukiSU][ReSukiSU]] and [[https://github.com/backslashxx/KernelSU][backslashxx/KernelSU]] for their fork-specific userspace and LKM releases.
 - [[https://github.com/JoshuaDoes][@JoshuaDoes]] for the root shell wrapper logic.
 
 * License

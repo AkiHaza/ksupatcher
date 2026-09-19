@@ -8,6 +8,12 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class GitHubReleaseAsset(
+    val name: String,
+    val downloadUrl: String,
+    val tagName: String,
+)
+
 class GitHubReleaseRepository(
     private val client: OkHttpClient = OkHttpClient()
 ) {
@@ -29,6 +35,55 @@ class GitHubReleaseRepository(
                 release.optString("tag_name").ifBlank {
                     error("Missing tag name")
                 }
+            }
+        }
+    }
+
+    /**
+     * Find an exact asset name in the newest releases that contain it.
+     *
+     * Some forks publish a manager/ksud-only release before publishing the
+     * matching LKM. Looking through a small window of releases keeps the
+     * downloader usable without guessing a tag or constructing a URL for an
+     * asset that is not present.
+     */
+    suspend fun fetchLatestAsset(
+        owner: String,
+        repo: String,
+        assetNames: List<String>,
+        perPage: Int = 20,
+    ): Result<GitHubReleaseAsset> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(assetNames.isNotEmpty()) { "No release asset candidates were supplied" }
+            val url = "https://api.github.com/repos/${owner}/${repo}/releases?per_page=$perPage"
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("User-Agent", "ksupatcher")
+                .header("Accept", "application/vnd.github+json")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    error("Release asset lookup failed: ${response.code}")
+                }
+                val body = response.body?.string() ?: error("Empty response")
+                val releases = JSONArray(body)
+                for (releaseIndex in 0 until releases.length()) {
+                    val release = releases.optJSONObject(releaseIndex) ?: continue
+                    val assets = release.optJSONArray("assets") ?: continue
+                    val tag = release.optString("tag_name").ifBlank { "unknown" }
+                    for (candidate in assetNames) {
+                        for (assetIndex in 0 until assets.length()) {
+                            val asset = assets.optJSONObject(assetIndex) ?: continue
+                            if (asset.optString("name") == candidate) {
+                                val downloadUrl = asset.optString("browser_download_url")
+                                    .ifBlank { error("Release asset has no download URL") }
+                                return@use GitHubReleaseAsset(candidate, downloadUrl, tag)
+                            }
+                        }
+                    }
+                }
+                error("No matching release asset found in $owner/$repo")
             }
         }
     }
